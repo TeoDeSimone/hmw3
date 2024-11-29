@@ -20,6 +20,8 @@ find_package(OpenCV REQUIRED)
 find_package(aruco REQUIRED)
 
 
+
+
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -53,7 +55,10 @@ target_include_directories(ros2_kdl_vision_control PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${EIGEN3_INCLUDE_DIRS}
-  $${PROJECT_NAME} aruco)
+  ${PROJECT_NAME} aruco)
+
+include_directories(${aruco_ros_INCLUDE_DIRS})
+
 target_compile_features(ros2_kdl_vision_control PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
 ament_target_dependencies(ros2_kdl_vision_control 

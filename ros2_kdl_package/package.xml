@@ -11,6 +11,7 @@
   <depend>orocos_kdl</depend>
   <depend>kdl_parser</depend>
   <depend>aruco</depend>
+  <depend>aruco_ros_pkg</depend>
 
   
   <buildtool_depend>ament_cmake</buildtool_depend>

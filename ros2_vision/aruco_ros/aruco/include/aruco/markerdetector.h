@@ -320,6 +320,8 @@ public:
    * @return vector with the detected markers
    */
   std::vector<aruco::Marker> detect(const cv::Mat &input);
+
+
   std::vector<aruco::Marker> detect(const cv::Mat &input, const CameraParameters &camParams,
                                     float markerSizeMeters, bool setYPerperdicular = false,
                                     bool correctFisheye = false);

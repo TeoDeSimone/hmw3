@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <memory>
 
+
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 
@@ -16,15 +17,15 @@
 #include "kdl_parser/kdl_parser.hpp"
 #include "aruco/markerdetector.h"
 #include "aruco/aruco.h"
-
-#include "sensor_msgs/msg/image.hpp"
-#include "std_msgs/msg/header.hpp"
-#include <opencv2/features2d.hpp>
-#include <cv_bridge/cv_bridge.h> 				// cv_bridge converts between ROS 2 image messages and OpenCV image representations.
-#include <image_transport/image_transport.hpp> // Using image_transport allows us to publish and subscribe to compressed image streams in ROS2
-#include <opencv2/opencv.hpp> 				  // We include everything about OpenCV as we don't care much about compilation time at the moment.
-//#include <opencv2/aruco.hpp>				  
-
+#include "aruco/cameraparameters.h"
+											
+#include "sensor_msgs/msg/image.hpp"        //\\    //
+#include "std_msgs/msg/header.hpp"		   //  \\  //
+#include <opencv2/features2d.hpp>	
+#include <cv_bridge/cv_bridge.h> 				//\\ 		cv_bridge converts between ROS 2 image messages and OpenCV image representations.
+#include <image_transport/image_transport.hpp> //  \\  //	Using image_transport allows us to publish and subscribe to compressed image streams in ROS2
+#include <opencv2/opencv.hpp> 				  //    \\// 	We include everything about OpenCV as we don't care much about compilation time at the moment.
+#include <opencv2/aruco.hpp>
 
 
  
@@ -43,10 +44,14 @@ class iiwa_vision_task : public rclcpp::Node
 			std::cout<<"test:constructor\n";
 			
 			
-			subscriber_=
+			subscriber_img_=
         		this->create_subscription<sensor_msgs::msg::Image>(
-          		"/camera", 10, std::bind(&iiwa_vision_task::subscriber, this, _1));
-          	
+          		"/camera", 10, std::bind(&iiwa_vision_task::subscriber_img, this, _1));
+          	/*
+          	subscriber_camera_info_=
+        		this->create_subscription<sensor_msgs::msg::CameraInfo>(
+          		"/camera_info", 10, std::bind(&iiwa_vision_task::subscriber_camera_info, this, _1));
+          	*/
 
           	timer_ = this->create_wall_timer(
 		        500ms, std::bind(&iiwa_vision_task::timer_callback, this));
@@ -58,17 +63,28 @@ class iiwa_vision_task : public rclcpp::Node
 
 	private:
 		
-		void subscriber(const sensor_msgs::msg::Image & camera_msg) //Secondo me qua dentro va messo msg_, se vedete l'api mi pare ci sia un puntatore, verificate
+		void subscriber_img(const sensor_msgs::msg::Image & camera_msg) //Secondo me qua dentro va messo msg_, se vedete l'api mi pare ci sia un puntatore, verificate
 	    {
 	      cv_ptr_ = cv_bridge::toCvCopy(camera_msg,"bgr8");
 	      cv_img_ = *cv_ptr_;
 
 	    }
-	    
 
+
+/*	    void subscriber_camera_info(const sensor_msgs::msg::CameraInfo & camera_info) //Secondo me qua dentro va messo msg_, se vedete l'api mi pare ci sia un puntatore, verificate
+	    {
+	    	if(!cam_info_received)
+	    			
+	     	
+
+	    	cam_info_received = true;
+	    }
+	    
+*/
 		void timer_callback() 
 		{
 
+		
 			std::cout<<"test:timer_callback\n";
 
 			//cv::imshow("cameraPOV", cv_img_.image);
@@ -83,26 +99,47 @@ class iiwa_vision_task : public rclcpp::Node
 
 			markers_[0].draw(image_marked, cv::Scalar(0, 0, 255), 2);
 
-			
-			
 
+			/*
 			cv::imshow("cameraPOV", image_marked);
 			cv::waitKey(0);
+*/
+			cameraPose_ = poseTracker.estimatePose(markers_);
+
+
+			std::cout<<"cmaera pose:"<<cameraPose_; 
+
 
 		}
 
 
 		std::vector<aruco::Marker> markers_;
 		aruco::MarkerDetector mDetector_;
+		aruco::CameraParameters cam_params_;
 
+
+		bool cameraPose_;
+
+		aruco::MarkerMapPoseTracker poseTracker;
 
 		//
 
 		cv_bridge::CvImagePtr cv_ptr_;
 		cv_bridge::CvImage cv_img_;
+		
+		/*std::vector<int> markerIds_;
+		std::vector<std::vector<cv::Point2f>> markerCorners_, rejectedCandidates_;
+		cv::Ptr<cv::aruco::DetectorParameters> detectorParams;
+		cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_ARUCO_ORIGINAL);
+		*/
+
+
 
 		rclcpp::TimerBase::SharedPtr timer_;
-		rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscriber_;
+		rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscriber_img_;
+		rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr subscriber_camera_info_;
+		bool cam_info_received;
+
 
 };
 

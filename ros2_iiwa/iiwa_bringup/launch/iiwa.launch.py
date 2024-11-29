@@ -287,7 +287,7 @@ def generate_launch_description():
             '/camera@sensor_msgs/msg/Image@gz.msgs.Image',
             '/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo',
             '--ros-args', 
-            '-r', '/camera:=/videocamera',
+            '-r', '/camera:=/camera',
         ],
         condition=IfCondition(LaunchConfiguration('use_vision')),
     )
