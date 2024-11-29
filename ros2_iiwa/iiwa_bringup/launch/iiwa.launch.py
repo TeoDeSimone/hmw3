@@ -275,6 +275,24 @@ def generate_launch_description():
             controllers_file,
         ]
     )
+
+
+
+    camera_node = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='camera_view',
+        output='screen',
+        arguments=[
+            '/camera@sensor_msgs/msg/Image@gz.msgs.Image',
+            '/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo',
+            '--ros-args', 
+            '-r', '/camera:=/videocamera',
+        ],
+        condition=IfCondition(LaunchConfiguration('use_vision')),
+    )
+
+
     rviz_config_file = PathJoinSubstitution(
         [FindPackageShare(description_package), 'rviz', 'iiwa.rviz']
     )
@@ -307,7 +325,7 @@ def generate_launch_description():
     )
     iiwa_simulation_world = PathJoinSubstitution(
         [FindPackageShare(description_package),
-            'gazebo/worlds', 'new.world']
+            'gazebo/worlds', 'empty.world'] #empty.world contains arucotag, new.world contains sphere 
     )
 
     """declared_arguments.append(DeclareLaunchArgument('gz_args', default_value='-r -v 1 empty.sdf',
@@ -403,6 +421,7 @@ def generate_launch_description():
         iiwa_servoing_launch,
         spawn_entity,
         robot_state_pub_node,
+        camera_node,
         delay_joint_state_broadcaster_spawner_after_control_node,
         delay_joint_state_broadcaster_spawner_after_spawn_entity,
         delay_rviz_after_joint_state_broadcaster_spawner,

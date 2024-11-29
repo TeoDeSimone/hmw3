@@ -89,12 +89,16 @@ private:
     cv::drawKeypoints( cv_img_.image, keypoints, im_with_keypoints, cv::Scalar(0,0,255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
  
     // Show blobs
-    cv::imshow("keypoints", im_with_keypoints);
-    cv::waitKey(0);
+    //cv::imshow("keypoints", im_with_keypoints);
+    //cv::waitKey(0);
 
 
-    msg_=cv_ptr_->toImageMsg();
+//  msg_=cv_ptr_->toImageMsg();
+    
+    msg_ = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", im_with_keypoints).toImageMsg();
+
     publisher_->publish(*msg_.get());
+    
   }
 
 
