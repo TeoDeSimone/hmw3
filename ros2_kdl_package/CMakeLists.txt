@@ -27,7 +27,7 @@ find_package(aruco REQUIRED)
 # find_package(<dependency> REQUIRED)
 
 add_executable(ros2_kdl_node src/ros2_kdl_node.cpp src/kdl_robot.cpp src/kdl_planner.cpp src/kdl_control.cpp)
-add_executable(ros2_kdl_vision_control src/ros2_kdl_vision_control.cpp src/kdl_robot.cpp src/kdl_planner.cpp src/kdl_control.cpp )
+add_executable(ros2_kdl_vc src/ros2_kdl_vc.cpp src/kdl_robot.cpp src/kdl_planner.cpp src/kdl_control.cpp )
 
 
 target_include_directories(ros2_kdl_node PUBLIC
@@ -49,9 +49,9 @@ install(TARGETS ros2_kdl_node
 
 
 
-#### ros2_kdl_vision_control included targets, target dipendencies########
+#### ros2_kdl_vc included targets, target dipendencies########
 
-target_include_directories(ros2_kdl_vision_control PUBLIC
+target_include_directories(ros2_kdl_vc PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${EIGEN3_INCLUDE_DIRS}
@@ -59,9 +59,9 @@ target_include_directories(ros2_kdl_vision_control PUBLIC
 
 include_directories(${aruco_ros_INCLUDE_DIRS})
 
-target_compile_features(ros2_kdl_vision_control PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_compile_features(ros2_kdl_vc PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
-ament_target_dependencies(ros2_kdl_vision_control 
+ament_target_dependencies(ros2_kdl_vc 
   orocos_kdl
   rclcpp
   kdl_parser
@@ -72,7 +72,7 @@ ament_target_dependencies(ros2_kdl_vision_control
   OpenCV
   aruco)
 
-install(TARGETS ros2_kdl_vision_control
+install(TARGETS ros2_kdl_vc
   DESTINATION lib/${PROJECT_NAME})
 
   ######################

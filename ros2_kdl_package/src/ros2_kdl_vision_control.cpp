@@ -1,157 +1,178 @@
-#include <stdio.h>
+#include <rclcpp/rclcpp.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
+#include <opencv2/aruco.hpp>
+#include <Eigen/Dense>
 #include <iostream>
-#include <chrono>
-#include <cstdlib>
-#include <memory>
-
-
-#include "std_msgs/msg/float64_multi_array.hpp"
-#include "sensor_msgs/msg/joint_state.hpp"
-
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp/wait_for_message.hpp"
+#include "aruco/markerdetector.h"
+#include "aruco/aruco.h"
+#include "aruco/posetracker.h"
 
 #include "kdl_robot.h"
 #include "kdl_control.h"
 #include "kdl_planner.h"
 #include "kdl_parser/kdl_parser.hpp"
-#include "aruco/markerdetector.h"
-#include "aruco/aruco.h"
-#include "aruco/cameraparameters.h"
-											
-#include "sensor_msgs/msg/image.hpp"        //\\    //
-#include "std_msgs/msg/header.hpp"		   //  \\  //
-#include <opencv2/features2d.hpp>	
-#include <cv_bridge/cv_bridge.h> 				//\\ 		cv_bridge converts between ROS 2 image messages and OpenCV image representations.
-#include <image_transport/image_transport.hpp> //  \\  //	Using image_transport allows us to publish and subscribe to compressed image streams in ROS2
-#include <opencv2/opencv.hpp> 				  //    \\// 	We include everything about OpenCV as we don't care much about compilation time at the moment.
-#include <opencv2/aruco.hpp>
-
-
- 
-using namespace KDL;
-using FloatArray = std_msgs::msg::Float64MultiArray;
-using namespace std::chrono_literals;
-using std::placeholders::_1;
-
-class iiwa_vision_task : public rclcpp::Node
-{
-
-	public:
-		iiwa_vision_task() : Node("ros2_kdl_vision_control") 
-		{
-
-			std::cout<<"test:constructor\n";
-			
-			
-			subscriber_img_=
-        		this->create_subscription<sensor_msgs::msg::Image>(
-          		"/camera", 10, std::bind(&iiwa_vision_task::subscriber_img, this, _1));
-          	/*
-          	subscriber_camera_info_=
-        		this->create_subscription<sensor_msgs::msg::CameraInfo>(
-          		"/camera_info", 10, std::bind(&iiwa_vision_task::subscriber_camera_info, this, _1));
-          	*/
-
-          	timer_ = this->create_wall_timer(
-		        500ms, std::bind(&iiwa_vision_task::timer_callback, this));
-		
-			
-		}
 
 
 
-	private:
-		
-		void subscriber_img(const sensor_msgs::msg::Image & camera_msg) //Secondo me qua dentro va messo msg_, se vedete l'api mi pare ci sia un puntatore, verificate
-	    {
-	      cv_ptr_ = cv_bridge::toCvCopy(camera_msg,"bgr8");
-	      cv_img_ = *cv_ptr_;
 
-	    }
-
-
-/*	    void subscriber_camera_info(const sensor_msgs::msg::CameraInfo & camera_info) //Secondo me qua dentro va messo msg_, se vedete l'api mi pare ci sia un puntatore, verificate
-	    {
-	    	if(!cam_info_received)
-	    			
-	     	
-
-	    	cam_info_received = true;
-	    }
-	    
-*/
-		void timer_callback() 
-		{
-
-		
-			std::cout<<"test:timer_callback\n";
-
-			//cv::imshow("cameraPOV", cv_img_.image);
-			//cv::waitKey(0);
-
-			cv::Mat image_marked;
-
-			image_marked = cv_img_.image; 
-
-			markers_ = mDetector_.detect(cv_img_.image);
-			std::cout<<"markerID:"<<markers_[0].id<<'\n';
-
-			markers_[0].draw(image_marked, cv::Scalar(0, 0, 255), 2);
-
-
-			/*
-			cv::imshow("cameraPOV", image_marked);
-			cv::waitKey(0);
-*/
-			cameraPose_ = poseTracker.estimatePose(markers_);
-
-
-			std::cout<<"cmaera pose:"<<cameraPose_; 
-
-
-		}
-
-
-		std::vector<aruco::Marker> markers_;
-		aruco::MarkerDetector mDetector_;
-		aruco::CameraParameters cam_params_;
-
-
-		bool cameraPose_;
-
-		aruco::MarkerMapPoseTracker poseTracker;
-
-		//
-
-		cv_bridge::CvImagePtr cv_ptr_;
-		cv_bridge::CvImage cv_img_;
-		
-		/*std::vector<int> markerIds_;
-		std::vector<std::vector<cv::Point2f>> markerCorners_, rejectedCandidates_;
-		cv::Ptr<cv::aruco::DetectorParameters> detectorParams;
-		cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_ARUCO_ORIGINAL);
-		*/
+class VisionController : public rclcpp::Node {
+public:
+    VisionController() : Node("ros2_kdl_vision_control") 
+    {
 
 
 
-		rclcpp::TimerBase::SharedPtr timer_;
-		rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscriber_img_;
-		rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr subscriber_camera_info_;
-		bool cam_info_received;
+
+        iteration_ = 0;//this will take account of number of cmd_publisher iterations
+        t_ = 0;
+        joint_state_available_ = false; 
+        
+
+
+
+        // Publisher to send velocity commands to the robot
+        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/velocity_controller/commands", 10);
+        
+        // Subscriber to get camera frames
+        cam_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+    "/camera_info", 10, std::bind(&VisionController::cameraInfoCallback, this, std::placeholders::_1));
+        
+        // Subscriber to get camera frames
+        image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+            "/camera", 10, std::bind(&VisionController::imageCallback, this, std::placeholders::_1));
+            
+
+        // Load ArUco dictionary
+        aruco_dict_ = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+        detector_params_ = cv::aruco::DetectorParameters::create();
+
+        RCLCPP_INFO(this->get_logger(), "Vision Controller Node Started");
+    }
+
+private:
+    
+    
+    void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
+        
+      if(camera_state_available_){
+
+        // Convert ROS image to OpenCV format
+        try {
+            input_image = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8)->image;
+        } catch (cv_bridge::Exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+            return;
+        }
+
+        // Detect ArUco markers
+        std::vector<aruco::Marker> det;
+        
+        //aruco::CameraParameters cam_params(camera_matrix_, dist_coeffs_, input_image.size());
+        aruco::CameraParameters cam_params;  
+       
+        cam_params.setParams(camera_matrix_, dist_coeffs_, input_image.size());
+        
+        std::cout << " camera params " << cam_params << std::endl;
+        
+        //det=markerdetector.detect(input_image, cam_params, -1 , false , false);
+        det = markerdetector.detect(input_image);
+
+        if (det.empty()) {
+            RCLCPP_WARN(this->get_logger(), "No ArUco markers detected.");
+            return;
+        }
+        
+        
+        // Estimate pose of the first detected marker
+        aruco::Marker marker = det[0];
+        marker.calculateExtrinsics( 0.1, cam_params, true );
+        //std::cout << " det : " << det[0] << std::endl;
+        std::cout << "rvec " << marker.Rvec << std::endl;
+        std::cout << "tvec " << marker.Tvec << std::endl;
+        std::cout << "coordinate centro " << marker.getCenter() << std::endl;
+
+        
+        //std::cout << "size camera " << input_image.size() << std::endl;
+
+        cv::Mat Rot_mat;
+        cv::Rodrigues(marker.Rvec, Rot_mat); //trasforma il formato di Rodrigues a matrice di rotazione 
+        //std::cout << "matrice di rot " << Rot_mat << std::endl;
+
+
+
+       
+       /*
+       //DEBUG PER LA DETECTION
+       for (const auto& marker : det) {           
+           marker.draw(input_image, cv::Scalar(0, 255, 0), 2); // Disegna il marker
+        }
+        
+        // Pubblicazione dell'immagine processata su "/videocamera_processata"
+       cv::imshow("keypoints", input_image ); 
+       cv::waitKey(3);
+        */
+        
+       
+     }
+     else{
+        std::cout << " Parameters not available "<< std::endl;
+     }
+       
+    }
+    
+    
+    void cameraInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
+        
+        if(!camera_state_available_){
+             // Store camera intrinsics
+            camera_matrix_ = cv::Mat(3, 3, CV_64F, (void*)msg->k.data()).clone();
+            dist_coeffs_ = cv::Mat(1, 5, CV_64F, (void*)msg->d.data()).clone();
+            RCLCPP_INFO(this->get_logger(), "Camera parameters received.");
+            std::cout << " camera matrix " << camera_matrix_ << std::endl;
+            std::cout << " coeff " << dist_coeffs_ << std::endl;
+
+            camera_state_available_=true;
+
+        }
+       
+    }
+    
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
+    cv::Ptr<cv::aruco::Dictionary> aruco_dict_;
+    cv::Ptr<cv::aruco::DetectorParameters> detector_params_;
+    cv::Mat input_image;
+    aruco::MarkerDetector markerdetector;
+    cv::Mat camera_matrix_;
+    cv::Mat dist_coeffs_;
+    aruco::MarkerPoseTracker pose_tracker_;
+    bool camera_state_available_=false;
+
+
+
+
+    //robot
+
+    std::shared_ptr<KDLRobot> robot_;
+
+    int iteration_;
+    bool joint_state_available_;
+    double t_;
 
 
 };
 
-int main(int argc, char *argv[]) 
-{
-	std::cout<<"test:main\n";
-  rclcpp::init(argc, argv);
-  // create a ros2 node
-  auto node = std::make_shared<iiwa_vision_task>();
- 
-  // process ros2 callbacks until receiving a SIGINT (ctrl-c)
-  rclcpp::spin(node);
-  rclcpp::shutdown();
-  return 0;
+
+
+int main(int argc, char** argv) {
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<VisionController>());
+    rclcpp::shutdown();
+    return 0;
 }
+

@@ -250,7 +250,7 @@
           <box size="0.05 0.05 0.05"/>
         </geometry>
         <material>
-          <color rgba="0.0 1.0 0.0 1.0"/> <!-- Verde per distinguere la camera -->
+          <color rgba="0.0 0.0 0.0 1.0"/> <!-- Verde per distinguere la camera -->
         </material>
       </visual>
       <collision>
@@ -262,7 +262,7 @@
 
     <!-- Joint per collegare la camera -->
     <joint name="${prefix}camera_joint" type="fixed">
-      <origin xyz="0 0 0.11" rpy="0 -1.57 0"/> <!-- Posizionata sull'end-effector -->
+      <origin xyz="0 0 0" rpy="0 -1.57 0"/> <!-- Posizionata sull'end-effector -->
       <parent link="${prefix}tool0"/>
       <child link="${prefix}camera_link"/>
       <axis xyz="0 0 0"/>

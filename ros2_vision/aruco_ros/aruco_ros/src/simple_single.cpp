@@ -56,6 +56,16 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 
+//////////
+#include <opencv2/features2d.hpp> 
+#include <cv_bridge/cv_bridge.h>        //\\    cv_bridge converts between ROS 2 image messages and OpenCV image representations.
+#include <image_transport/image_transport.hpp> //  \\  // Using image_transport allows us to publish and subscribe to compressed image streams in ROS2
+#include <opencv2/opencv.hpp>           //    \\//  We include everything about OpenCV as we don't care much about compilation time at the moment.
+#include <opencv2/aruco.hpp>
+
+/////////1
+
+
 class ArucoSimple : public rclcpp::Node
 {
 private:
@@ -129,8 +139,8 @@ public:
     RCLCPP_INFO_STREAM(this->get_logger(), "Threshold method: " << thresh_method);
 
     // Declare node parameters
-    this->declare_parameter<double>("marker_size", 0.05);
-    this->declare_parameter<int>("marker_id", 300);
+    this->declare_parameter<double>("marker_size", 0.1);
+    this->declare_parameter<int>("marker_id", 201);
     this->declare_parameter<std::string>("reference_frame", "");
     this->declare_parameter<std::string>("camera_frame", "");
     this->declare_parameter<std::string>("marker_frame", "");
@@ -156,7 +166,7 @@ public:
       this->get_logger(), "Marker size min: " << min_marker_size << " of image area");
     RCLCPP_INFO_STREAM(this->get_logger(), "Detection mode: " << detection_mode);
 
-    image_sub = it_->subscribe("/image", 1, &ArucoSimple::image_callback, this);
+    image_sub = it_->subscribe("/camera", 1, &ArucoSimple::image_callback, this);
     cam_info_sub = this->create_subscription<sensor_msgs::msg::CameraInfo>(
       "/camera_info", 1, std::bind(
         &ArucoSimple::cam_info_callback, this,
@@ -251,6 +261,18 @@ public:
         markers.clear();
         // ok, let's detect
         mDetector.detect(inImage, markers, camParam, marker_size, false);
+        /////////////merdamia
+
+        std::cout<<"markerID:"<<markers[0].id<<'\n';
+
+        markers[0].draw(inImage, cv::Scalar(0, 0, 255), 2);
+
+
+      
+        cv::imshow("cameraPOV", inImage);
+        cv::waitKey(0);
+
+
         // for each marker, draw info and its boundaries in the image
         for (std::size_t i = 0; i < markers.size(); ++i) {
           // only publishing the selected marker

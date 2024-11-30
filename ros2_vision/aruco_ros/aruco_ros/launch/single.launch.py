@@ -33,12 +33,12 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
 
     marker_id_arg = DeclareLaunchArgument(
-        'marker_id', default_value='582',
+        'marker_id', default_value='201',
         description='Marker ID. '
     )
 
     marker_size_arg = DeclareLaunchArgument(
-        'marker_size', default_value='0.34',
+        'marker_size', default_value='0.1',
         description='Marker size in m. '
     )
 
