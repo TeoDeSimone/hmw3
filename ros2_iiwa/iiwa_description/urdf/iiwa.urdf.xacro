@@ -232,7 +232,7 @@
   </joint>
 
   
-  <!--<xacro:if value="${use_vision}">-->
+  <xacro:if value="${use_vision}">
 
     <xacro:include filename="$(find iiwa_description)/urdf/iiwa_camera.xacro"/>
     <xacro:iiwa_camera reference="camera_link"/>
@@ -262,12 +262,12 @@
 
     <!-- Joint per collegare la camera -->
     <joint name="${prefix}camera_joint" type="fixed">
-      <origin xyz="0 0 0" rpy="0 -1.57 0"/> <!-- Posizionata sull'end-effector -->
+      <origin xyz="0 0 0" rpy="0 0 0"/> <!-- Posizionata sull'end-effector -->
       <parent link="${prefix}tool0"/>
       <child link="${prefix}camera_link"/>
       <axis xyz="0 0 0"/>
     </joint>
-  <!--</xacro:if>-->
+  </xacro:if>
 
   </xacro:macro>
 </robot>

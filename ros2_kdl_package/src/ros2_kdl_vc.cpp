@@ -29,6 +29,7 @@
 #include "aruco/posetracker.h"
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
@@ -68,7 +69,7 @@ class Iiwa_pub_sub : public rclcpp::Node
 
             }
 
-
+/*
             while(!(trajectory_type_=="circ"||trajectory_type_=="lin"))
             {
                 std::cout<<"insert desired trajectory (circ/lin):";
@@ -76,7 +77,8 @@ class Iiwa_pub_sub : public rclcpp::Node
                 if(!(trajectory_type_=="circ"||trajectory_type_=="lin"))
                     RCLCPP_INFO(get_logger(),"Selected trajectory type is not valid!");
             }
-
+*/
+            trajectory_type_="lin";
 
             while(!(trajectory_profile_=="trap"||trajectory_profile_=="cubic"))                
             {
@@ -156,6 +158,20 @@ class Iiwa_pub_sub : public rclcpp::Node
                 rclcpp::spin_some(node_handle_);
             }
 
+
+            aruco_pose_detected_=false;
+            
+            //Subscrivber to aruco marker pose
+            //geometry_msgs/msg/PoseStamped
+            aruco_mark_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+                "/aruco_single/pose", 10, std::bind(&Iiwa_pub_sub::pose_subscriber, this, std::placeholders::_1));
+
+            while(aruco_pose_detected_==0)
+            {
+                std::cout<<"waiting for aruco pose...\n";
+            }
+
+
             // Update KDLrobot object
             robot_->update(toStdVector(joint_positions_.data),toStdVector(joint_velocities_.data));
             KDL::Frame f_T_ee = KDL::Frame::Identity();
@@ -183,21 +199,10 @@ class Iiwa_pub_sub : public rclcpp::Node
             Eigen::Vector3d end_position;  
             
 
-                         // Subscriber to get camera frames
-            cam_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-                "/camera_info", 10, std::bind(&Iiwa_pub_sub::cameraInfoCallback, this, std::placeholders::_1));
-        
-            // Subscriber to get camera frames
-            image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-                "/camera", 10, std::bind(&Iiwa_pub_sub::imageCallback, this, std::placeholders::_1));
-
-
-
-
-
-
             //final point of the linear trajectory
-            end_position<<1, -0.4, 0.6;
+            end_position<<aruco_frame_bf_.p.data[0],aruco_frame_bf_.p.data[1],aruco_frame_bf_.p.data[2];
+
+            std::cout<<"ENDPOSITIONDISTOCAZZO :"<<end_position(0)<<" "<<end_position(1)<<" "<<end_position(2)<<"\n\n\n\n\n\n\n";
             
 
             // Plan trajectory 
@@ -249,12 +254,6 @@ class Iiwa_pub_sub : public rclcpp::Node
             }
 
 
-
-
-
-
-
-
             // Create msg and publish
             std_msgs::msg::Float64MultiArray cmd_msg;
             cmd_msg.data = desired_commands_;
@@ -265,94 +264,43 @@ class Iiwa_pub_sub : public rclcpp::Node
 
     private:
 
-        void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg) 
+        void pose_subscriber(const geometry_msgs::msg::PoseStamped::SharedPtr pose_msg)
         {
-            
-          if(camera_state_available_){
 
-            // Convert ROS image to OpenCV format
-            try {
-                input_image = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8)->image;
-            } catch (cv_bridge::Exception& e) {
-                RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
-                return;
-            }
-
-            // Detect ArUco markers
-            std::vector<aruco::Marker> det;
-            
-            //aruco::CameraParameters cam_params(camera_matrix_, dist_coeffs_, input_image.size());
-            aruco::CameraParameters cam_params;  
-           
-            cam_params.setParams(camera_matrix_, dist_coeffs_, input_image.size());
-            
-            std::cout << " camera params " << cam_params << std::endl;
-            
-            //det=markerdetector.detect(input_image, cam_params, -1 , false , false);
-            det = markerdetector.detect(input_image);
-
-            if (det.empty()) 
+            if(!aruco_pose_detected_)
             {
-                RCLCPP_WARN(this->get_logger(), "No ArUco markers detected.");
-                return;
-            }
-            
-            
-            // Estimate pose of the first detected marker
-            aruco::Marker marker = det[0];
-            marker.calculateExtrinsics( 0.1, cam_params, true );
-            //std::cout << " det : " << det[0] << std::endl;
-            std::cout << "rvec " << marker.Rvec << std::endl;
-            std::cout << "tvec " << marker.Tvec << std::endl;
-            std::cout << "coordinate centro " << marker.getCenter() << std::endl;
+                //posa sta in pose_msg.pose;
+                //trasl sta in pose_msg.pose.position
+                //rotaz sta in pose_msg.pose.orientation
 
-            
-            //std::cout << "size camera " << input_image.size() << std::endl;
+                KDL::Frame cameraframe = robot_->getEEFrame();  
 
-            cv::Mat Rot_mat;
-            cv::Rodrigues(marker.Rvec, Rot_mat); //trasforma il formato di Rodrigues a matrice di rotazione 
-            //std::cout << "matrice di rot " << Rot_mat << std::endl;
+                KDL::Vector aruco_trasl_vec_cf;
+                Eigen::VectorXd aruco_quaternion_cf;
 
-            
+                aruco_quaternion_cf.resize(4);
 
-           
-           /*
-           //DEBUG PER LA DETECTION
-           for (const auto& marker : det) {           
-               marker.draw(input_image, cv::Scalar(0, 255, 0), 2); // Disegna il marker
-            }
-            
-            // Pubblicazione dell'immagine processata su "/videocamera_processata"
-           cv::imshow("keypoints", input_image ); 
-           cv::waitKey(3);
-            */
-            
-           
-         }
-         else
-         {
-            std::cout << " Parameters not available "<< std::endl;
-         }
+                aruco_trasl_vec_cf[0] = pose_msg->pose.position.x;
+                aruco_trasl_vec_cf[1] = pose_msg->pose.position.y;
+                aruco_trasl_vec_cf[2] = pose_msg->pose.position.z;
+
+                aruco_quaternion_cf[0] = pose_msg->pose.orientation.x;
+                aruco_quaternion_cf[1] = pose_msg->pose.orientation.y;
+                aruco_quaternion_cf[2] = pose_msg->pose.orientation.z;
+                aruco_quaternion_cf[3] = pose_msg->pose.orientation.w;
        
-        }
-
-
-        void cameraInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) 
-         {        
-            if(!camera_state_available_){
-                 // Store camera intrinsics
-                camera_matrix_ = cv::Mat(3, 3, CV_64F, (void*)msg->k.data()).clone();
-                dist_coeffs_ = cv::Mat(1, 5, CV_64F, (void*)msg->d.data()).clone();
-                RCLCPP_INFO(this->get_logger(), "Camera parameters received.");
-                std::cout << " camera matrix " << camera_matrix_ << std::endl;
-                std::cout << " coeff " << dist_coeffs_ << std::endl;
-
-                camera_state_available_=true;
-
+                KDL::Frame aruco_frame_cf;
+                aruco_frame_cf.M = KDL::Rotation::Quaternion(aruco_quaternion_cf[0], aruco_quaternion_cf[1], aruco_quaternion_cf[2], aruco_quaternion_cf[3]);
+                aruco_frame_cf.p = aruco_trasl_vec_cf;
+                aruco_frame_bf_= cameraframe * aruco_frame_cf;
+                aruco_pose_detected_=true;
+                std::cout<<"AAAAAAAAAAAAAAAAAAAAAAAAA"<<aruco_frame_bf_.p.data[0]<<aruco_frame_bf_.p.data[1]<<aruco_frame_bf_.p.data[2]<<"AAAAAAAAAAAAAAAAAAAAAAA\n";
+                std::cout<<"ARUCOPOSEDETECTED: "<<aruco_pose_detected_<<'\n';
+            
             }
-       
-        }
 
+
+        }
 
 
         void cmd_publisher()
@@ -391,7 +339,11 @@ class Iiwa_pub_sub : public rclcpp::Node
                     //   to the used contructor: see lines circa 166-169  
 
                 // Compute EE frame
-                KDL::Frame cartpos = robot_->getEEFrame();           
+                KDL::Frame cartpos = robot_->getEEFrame();     
+
+                std::cout<<"\ncartpos.p:"<<cartpos.p<<'\n';
+                std::cout<<"cartpos.M:"<<cartpos.M<<'\n';
+
 
                
                 // compute errors //distances between end effector and target position
@@ -574,14 +526,10 @@ class Iiwa_pub_sub : public rclcpp::Node
 
 
         //camera
-        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
-        rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr aruco_mark_pose_sub_;
 
-        cv::Mat input_image;
-        aruco::MarkerDetector markerdetector;
-        cv::Mat camera_matrix_;
-        cv::Mat dist_coeffs_;
-        bool camera_state_available_=false;
+        KDL::Frame aruco_frame_bf_;
+        bool aruco_pose_detected_;
 };
 
  

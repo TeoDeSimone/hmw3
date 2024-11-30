@@ -25,29 +25,17 @@ public:
     {
 
 
-
-
-        iteration_ = 0;//this will take account of number of cmd_publisher iterations
-        t_ = 0;
-        joint_state_available_ = false; 
-        
-
-
-
-        // Publisher to send velocity commands to the robot
-        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/velocity_controller/commands", 10);
-        
+    
         // Subscriber to get camera frames
         cam_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-    "/camera_info", 10, std::bind(&VisionController::cameraInfoCallback, this, std::placeholders::_1));
+        "/camera_info", 10, std::bind(&VisionController::cameraInfoCallback, this, std::placeholders::_1));
         
         // Subscriber to get camera frames
         image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             "/camera", 10, std::bind(&VisionController::imageCallback, this, std::placeholders::_1));
             
 
-        // Load ArUco dictionary
-        aruco_dict_ = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+        
         detector_params_ = cv::aruco::DetectorParameters::create();
 
         RCLCPP_INFO(this->get_logger(), "Vision Controller Node Started");
@@ -56,7 +44,8 @@ public:
 private:
     
     
-    void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
+    void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg) 
+    {
         
       if(camera_state_available_){
 
@@ -154,15 +143,6 @@ private:
     bool camera_state_available_=false;
 
 
-
-
-    //robot
-
-    std::shared_ptr<KDLRobot> robot_;
-
-    int iteration_;
-    bool joint_state_available_;
-    double t_;
 
 
 };
