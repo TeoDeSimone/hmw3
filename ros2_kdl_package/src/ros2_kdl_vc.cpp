@@ -48,7 +48,7 @@ class Iiwa_pub_sub : public rclcpp::Node
         node_handle_(std::shared_ptr<Iiwa_pub_sub>(this))
         {
             // declare cmd_interface parameter (position, velocity, effort)
-            declare_parameter("cmd_interface", "position"); // defaults to "position"
+            declare_parameter("cmd_interface", "velocity"); // defaults to "position"
             get_parameter("cmd_interface", cmd_interface_);
             RCLCPP_INFO(get_logger(),"Current cmd interface is: '%s'", cmd_interface_.c_str());
 
@@ -111,6 +111,7 @@ class Iiwa_pub_sub : public rclcpp::Node
             iteration_ = 0;//this will take account of number of cmd_publisher iterations
             t_ = 0;
             joint_state_available_ = false; 
+            aruco_pose_detected_=false;
 
             // retrieve robot_description param
             auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(node_handle_, "robot_state_publisher");
@@ -150,7 +151,6 @@ class Iiwa_pub_sub : public rclcpp::Node
             jointSubscriber_ = this->create_subscription<sensor_msgs::msg::JointState>(
                 "/joint_states", 10, std::bind(&Iiwa_pub_sub::joint_state_subscriber, this, std::placeholders::_1));
 
-
             // Wait for the joint_state topic
             while(!joint_state_available_)
             {
@@ -159,107 +159,119 @@ class Iiwa_pub_sub : public rclcpp::Node
             }
 
 
-            aruco_pose_detected_=false;
+           
+ 
             
-            //Subscrivber to aruco marker pose
-            //geometry_msgs/msg/PoseStamped
-            aruco_mark_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-                "/aruco_single/pose", 10, std::bind(&Iiwa_pub_sub::pose_subscriber, this, std::placeholders::_1));
-
-            while(aruco_pose_detected_==0)
-            {
-                std::cout<<"waiting for aruco pose...\n";
-            }
-
-
-            // Update KDLrobot object
-            robot_->update(toStdVector(joint_positions_.data),toStdVector(joint_velocities_.data));
-            KDL::Frame f_T_ee = KDL::Frame::Identity();
-            robot_->addEE(f_T_ee);
-            robot_->update(toStdVector(joint_positions_.data),toStdVector(joint_velocities_.data));
-
-            // Compute EE frame
-            init_cart_pose_ = robot_->getEEFrame();
-            // std::cout << "The initial EE pose is: " << std::endl;  
-            // std::cout << init_cart_pose_ <<std::endl;
-
-            // Compute IK in order to know the initial position of the joints
-            KDL::JntArray q(nj);
-            robot_->getInverseKinematics(init_cart_pose_, q);
-            // std::cout << "The inverse kinematics returned: " <<std::endl; 
-            // std::cout << q.data <<std::endl;
-
-            // Initialize controller
-            KDLController controller_(*robot_);
-
-            // EE's trajectory initial position (just an offset)
-            Eigen::Vector3d init_position(Eigen::Vector3d(init_cart_pose_.p.data) - Eigen::Vector3d(0,0,0.1));
-
-            // EE's trajectory end position(just opposite y) and wakeup_end_position (a rest position from which the robot will execute the required trajectory)
-            Eigen::Vector3d end_position;  
-            
-
-            //final point of the linear trajectory
-            end_position<<aruco_frame_bf_.p.data[0],aruco_frame_bf_.p.data[1],aruco_frame_bf_.p.data[2];
-
-            std::cout<<"ENDPOSITIONDISTOCAZZO :"<<end_position(0)<<" "<<end_position(1)<<" "<<end_position(2)<<"\n\n\n\n\n\n\n";
-            
-
-            // Plan trajectory 
-            double traj_duration = 1.5, acc_duration = 0.5;
-            
-            planner_ = KDLPlanner(traj_duration, acc_duration, init_position, end_position);//linear trajectory (sets the radius=0 as a flag)
-
-         
-            //create the publisher according to cmd_interface_value
-            if(cmd_interface_ == "position")
-            {
-                // Create cmd publisher
-                cmdPublisher_ = this->create_publisher<FloatArray>("/iiwa_arm_controller/commands", 10);
-                timer_ = this->create_wall_timer(std::chrono::milliseconds(10), 
-                                            std::bind(&Iiwa_pub_sub::cmd_publisher, this));
-            
-                // Send joint position commands
-                for (long int i = 0; i < joint_positions_.data.size(); ++i) 
-                {
-                    desired_commands_[i] = joint_positions_(i);
-                }
-            }
-            else if(cmd_interface_ == "effort")
-            {
-                // Create cmd publisher
-                cmdPublisher_ = this->create_publisher<FloatArray>("/iiwa_arm_torque_controller/commands", 10);
-                timer_ = this->create_wall_timer(std::chrono::milliseconds(10), 
-                                            std::bind(&Iiwa_pub_sub::cmd_publisher, this));
-            
-                // Send joint position commands
-                for (long int i = 0; i < joint_torques_.size(); ++i) 
-                {
-                    desired_commands_[i] = joint_torques_(i);
-                }       
                 
-            }
-            else //velocity control
-            { 
-                // Create cmd publisher
-                cmdPublisher_ = this->create_publisher<FloatArray>("/velocity_controller/commands", 10);
-                timer_ = this->create_wall_timer(std::chrono::milliseconds(10), 
-                                            std::bind(&Iiwa_pub_sub::cmd_publisher, this));
-            
-                // Send joint velocity commands
-                for (long int i = 0; i < joint_velocities_.data.size(); ++i) 
+                // Update KDLrobot object
+                robot_->update(toStdVector(joint_positions_.data),toStdVector(joint_velocities_.data));
+                KDL::Frame f_T_ee = KDL::Frame::Identity();
+                robot_->addEE(f_T_ee);
+                robot_->update(toStdVector(joint_positions_.data),toStdVector(joint_velocities_.data));
+
+                // Compute EE frame
+                init_cart_pose_ = robot_->getEEFrame();
+                // std::cout << "The initial EE pose is: " << std::endl;  
+                // std::cout << init_cart_pose_ <<std::endl;
+
+                // Compute IK in order to know the initial position of the joints
+                KDL::JntArray q(nj);
+                robot_->getInverseKinematics(init_cart_pose_, q);
+                // std::cout << "The inverse kinematics returned: " <<std::endl; 
+                // std::cout << q.data <<std::endl;
+
+                // Initialize controller
+                KDLController controller_(*robot_);
+
+                // EE's trajectory initial position (just an offset)
+                Eigen::Vector3d init_position(Eigen::Vector3d(init_cart_pose_.p.data));
+
+                // EE's trajectory end position(just opposite y) and wakeup_end_position (a rest position from which the robot will execute the required trajectory)
+                Eigen::Vector3d end_position;  
+
+
+
+                //Subscrivber to aruco marker pose
+                //geometry_msgs/msg/PoseStamped
+                aruco_mark_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+                    "/aruco_single/pose", 10, std::bind(&Iiwa_pub_sub::pose_subscriber, this, std::placeholders::_1));
+
+                // Wait for the joint_state topic
+                while(aruco_pose_detected_<1)
                 {
-                    desired_commands_[i] = joint_velocities_(i);
+                    std::cout<<aruco_pose_detected_<<'\n';
+                    RCLCPP_INFO(this->get_logger(), "No aruco pose received yet! ...");
+                    rclcpp::spin_some(node_handle_);
                 }
-            }
 
 
-            // Create msg and publish
-            std_msgs::msg::Float64MultiArray cmd_msg;
-            cmd_msg.data = desired_commands_;
-            cmdPublisher_->publish(cmd_msg);
+                //final point of the linear trajectory
+                end_position<<aruco_frame_bf_.p.data[0],aruco_frame_bf_.p.data[1]+0.05,aruco_frame_bf_.p.data[2]; 
 
-            RCLCPP_INFO(this->get_logger(), "Starting trajectory execution ...");
+                std::cout<<"ENDPOSITIONDISTOCAZZO :"<<end_position(0)<<" "<<end_position(1)<<" "<<end_position(2)<<"\n\n\n\n\n\n\n";
+
+                std::cout<<"rotation_matrix: ["<<aruco_frame_bf_.M.data[0]<<' '<<aruco_frame_bf_.M.data[1]<<' '<<aruco_frame_bf_.M.data[2];
+                std::cout<<'\n'<<aruco_frame_bf_.M.data[3]<<' '<<aruco_frame_bf_.M.data[4]<<' '<<aruco_frame_bf_.M.data[5];
+                std::cout<<'\n' <<aruco_frame_bf_.M.data[6]<<' '<<aruco_frame_bf_.M.data[7]<<' '<<aruco_frame_bf_.M.data[8];
+
+                
+                
+                // Plan trajectory 
+                double traj_duration = 1.5, acc_duration = 0.5;
+                
+                planner_ = KDLPlanner(traj_duration, acc_duration, init_position, end_position);//linear trajectory (sets the radius=0 as a flag)
+
+             
+                //create the publisher according to cmd_interface_value
+                if(cmd_interface_ == "position")
+                {
+                    // Create cmd publisher
+                    cmdPublisher_ = this->create_publisher<FloatArray>("/iiwa_arm_controller/commands", 10);
+                    timer_ = this->create_wall_timer(std::chrono::milliseconds(10), 
+                                                std::bind(&Iiwa_pub_sub::cmd_publisher, this));
+                
+                    // Send joint position commands
+                    for (long int i = 0; i < joint_positions_.data.size(); ++i) 
+                    {
+                        desired_commands_[i] = joint_positions_(i);
+                    }
+                }
+                else if(cmd_interface_ == "effort")
+                {
+                    // Create cmd publisher
+                    cmdPublisher_ = this->create_publisher<FloatArray>("/iiwa_arm_torque_controller/commands", 10);
+                    timer_ = this->create_wall_timer(std::chrono::milliseconds(10), 
+                                                std::bind(&Iiwa_pub_sub::cmd_publisher, this));
+                
+                    // Send joint position commands
+                    for (long int i = 0; i < joint_torques_.size(); ++i) 
+                    {
+                        desired_commands_[i] = joint_torques_(i);
+                    }       
+                    
+                }
+                else //velocity control
+                { 
+                    // Create cmd publisher
+                    cmdPublisher_ = this->create_publisher<FloatArray>("/velocity_controller/commands", 10);
+                    timer_ = this->create_wall_timer(std::chrono::milliseconds(10), 
+                                                std::bind(&Iiwa_pub_sub::cmd_publisher, this));
+                
+                    // Send joint velocity commands
+                    for (long int i = 0; i < joint_velocities_.data.size(); ++i) 
+                    {
+                        desired_commands_[i] = joint_velocities_(i);
+                    }
+                }
+
+
+                // Create msg and publish
+                std_msgs::msg::Float64MultiArray cmd_msg;
+                cmd_msg.data = desired_commands_;
+                cmdPublisher_->publish(cmd_msg);
+
+                RCLCPP_INFO(this->get_logger(), "Starting trajectory execution ...");
+            
         }
 
     private:
@@ -267,13 +279,15 @@ class Iiwa_pub_sub : public rclcpp::Node
         void pose_subscriber(const geometry_msgs::msg::PoseStamped::SharedPtr pose_msg)
         {
 
-            if(!aruco_pose_detected_)
+            if(aruco_pose_detected_<1)
             {
                 //posa sta in pose_msg.pose;
                 //trasl sta in pose_msg.pose.position
                 //rotaz sta in pose_msg.pose.orientation
 
                 KDL::Frame cameraframe = robot_->getEEFrame();  
+
+                KDL::Rotation y_rotation = KDL::Rotation::RotY(M_PI);
 
                 KDL::Vector aruco_trasl_vec_cf;
                 Eigen::VectorXd aruco_quaternion_cf;
@@ -291,9 +305,12 @@ class Iiwa_pub_sub : public rclcpp::Node
        
                 KDL::Frame aruco_frame_cf;
                 aruco_frame_cf.M = KDL::Rotation::Quaternion(aruco_quaternion_cf[0], aruco_quaternion_cf[1], aruco_quaternion_cf[2], aruco_quaternion_cf[3]);
+
+                aruco_frame_cf.M=aruco_frame_cf.M*y_rotation;
+
                 aruco_frame_cf.p = aruco_trasl_vec_cf;
                 aruco_frame_bf_= cameraframe * aruco_frame_cf;
-                aruco_pose_detected_=true;
+                aruco_pose_detected_++;
                 std::cout<<"AAAAAAAAAAAAAAAAAAAAAAAAA"<<aruco_frame_bf_.p.data[0]<<aruco_frame_bf_.p.data[1]<<aruco_frame_bf_.p.data[2]<<"AAAAAAAAAAAAAAAAAAAAAAA\n";
                 std::cout<<"ARUCOPOSEDETECTED: "<<aruco_pose_detected_<<'\n';
             
@@ -330,7 +347,7 @@ class Iiwa_pub_sub : public rclcpp::Node
                 if(t_<=trajectory_time)// retrive the points of the requested trajectory
                     p = planner_.compute_trajectory(t_,trajectory_profile_);
                 else    //don't move
-                    p=p;
+                    p = planner_.compute_trajectory(trajectory_time,trajectory_profile_);
 
 
 
@@ -348,7 +365,7 @@ class Iiwa_pub_sub : public rclcpp::Node
                
                 // compute errors //distances between end effector and target position
                 Eigen::Vector3d error = computeLinearError(p.pos, Eigen::Vector3d(cartpos.p.data)); 
-                Eigen::Vector3d o_error = computeOrientationError(toEigen(init_cart_pose_.M), toEigen(cartpos.M));
+                Eigen::Vector3d o_error = computeOrientationError(toEigen(aruco_frame_bf_.M), toEigen(cartpos.M));
                 //std::cout << "The target is : " << p.pos[0] << p.pos[1] << p.pos[2] << std::endl;
 
 
@@ -405,7 +422,7 @@ class Iiwa_pub_sub : public rclcpp::Node
                 {
 
                     // Compute differential IK
-                    Vector6d des_cartvel; des_cartvel << p.vel + 5*error, o_error;
+                    Vector6d des_cartvel; des_cartvel << p.vel + 10*error, o_error;
                     
                     
                     joint_velocities_.data = pseudoinverse(robot_->getEEJacobian().data)*des_cartvel;
@@ -529,7 +546,7 @@ class Iiwa_pub_sub : public rclcpp::Node
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr aruco_mark_pose_sub_;
 
         KDL::Frame aruco_frame_bf_;
-        bool aruco_pose_detected_;
+        int aruco_pose_detected_;
 };
 
  
