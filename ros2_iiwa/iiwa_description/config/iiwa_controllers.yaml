@@ -55,6 +55,8 @@ velocity_controller:
 
 effort_controller:
   ros__parameters:
+    command_interfaces:
+      - effort
     joints:
       - joint_a1
       - joint_a2

@@ -23,7 +23,7 @@ def launch_setup(context, *args, **kwargs):
         package='aruco_ros',
         executable='single',
         parameters=[aruco_single_params],
-        remappings=[('/cam_info', '/stereo/' + eye + '/cam_info'),
+        remappings=[('/camera_info', '/stereo/' + eye + '/camera_info'),
                     ('/camera', '/stereo/' + eye + '/image_rect_color')],
     )
 

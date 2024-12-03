@@ -321,7 +321,7 @@ def generate_launch_description():
         parameters=[
             robot_description,
         ],
-        condition=UnlessCondition(OrSubstitution(use_planning, use_sim)),
+        condition=UnlessCondition(use_planning),
     )
     iiwa_simulation_world = PathJoinSubstitution(
         [FindPackageShare(description_package),
