@@ -48,11 +48,12 @@ class Iiwa_pub_sub : public rclcpp::Node
         node_handle_(std::shared_ptr<Iiwa_pub_sub>(this))
         {
 
-            camera_choice_="pos";
+            
             // declare cmd_interface parameter (position, velocity, effort)
             declare_parameter("cmd_interface", "effort"); // defaults to "position"
             get_parameter("cmd_interface", cmd_interface_);
             RCLCPP_INFO(get_logger(),"Current cmd interface is: '%s'", cmd_interface_.c_str());
+
 
             //controllo sull'ammissibilità del parametro cmd_interface_
             if (!(cmd_interface_ == "position" || cmd_interface_ == "velocity" || cmd_interface_ == "effort" ))
@@ -60,9 +61,19 @@ class Iiwa_pub_sub : public rclcpp::Node
                 RCLCPP_INFO(get_logger(),"Selected cmd interface is not valid!"); return;
             }
             
-            
-/*
-            while(!(control_technique_== "JS" || control_technique_== "OS"))  //joint space inverse dynamic controller o operational space inverse dynamics controller            
+             while(!(camera_choice_== "lap" || camera_choice_== "pos" || camera_choice_=="mix"))  //joint space inverse dynamic controller o operational space inverse dynamics controller            
+            {
+                std::cout<<"insert camera choice:"<<std::endl<<"look at point(lap)/positioning(pos)/mix(mix):";
+                std::cin>>camera_choice_;
+                if(!(control_technique_=="lap"||control_technique_=="pos" || camera_choice_=="mix"))
+                    RCLCPP_INFO(get_logger(),"Selected control technique is not valid!");
+
+            }
+                        
+
+
+
+/*          while(!(control_technique_== "JS" || control_technique_== "OS"))  //joint space inverse dynamic controller o operational space inverse dynamics controller            
             {
                 std::cout<<"insert inverse dynamic controller approach:"<<std::endl<<"joint space(JS)/ operational space(OS):";
                 std::cin>>control_technique_;
@@ -98,8 +109,10 @@ class Iiwa_pub_sub : public rclcpp::Node
 
             if(control_technique_=="JS")
             {
+//                std::cout<<"kp,kd: ";  //kp=1 kd=1;
+//                std::cin>>kp_>>kd_;
                 kp_=1;
-                kd_=1;
+                kd_=5;
                 kpo_=1;  //unused
                 kdo_=1;  //unused
 
@@ -217,7 +230,7 @@ class Iiwa_pub_sub : public rclcpp::Node
 
 
                 //final point of the linear trajectory
-                end_position<<0.4 , aruco_frame_bf_.p.data[1] , aruco_frame_bf_.p.data[2]; 
+                end_position<<0.3 , aruco_frame_bf_.p.data[1] , aruco_frame_bf_.p.data[2]+0.4; 
 
 
 //                end_position<<0.5,0.2,0.5;
@@ -231,7 +244,9 @@ class Iiwa_pub_sub : public rclcpp::Node
                 
                 planner_ = KDLPlanner(traj_duration, acc_duration, init_position, end_position);//linear trajectory (sets the radius=0 as a flag)
 
-             
+                
+                p = planner_.compute_trajectory(t_,trajectory_profile_);
+
                 //create the publisher according to cmd_interface_value
                 if(cmd_interface_ == "position")
                 {
@@ -288,7 +303,7 @@ class Iiwa_pub_sub : public rclcpp::Node
 
         void pose_subscriber(const geometry_msgs::msg::PoseStamped::SharedPtr pose_msg)
         {
-            if((aruco_pose_detected_<1 && camera_choice_=="pos")|| camera_choice_=="lap")
+            if((aruco_pose_detected_<1 && camera_choice_=="pos")|| camera_choice_=="lap" || camera_choice_=="mix")
             {
                 std::cout<<"subscriber: "<<aruco_pose_detected_<<"\n";
                 //posa sta in pose_msg.pose;
@@ -370,9 +385,9 @@ class Iiwa_pub_sub : public rclcpp::Node
 
             //###########################################################################
 
-            if(camera_choice_=="lap")
+            if(camera_choice_=="lap"||camera_choice_=="mix")
             {
-                std::cout<<"sono qui 1\n";
+                std::cout<<"Look at point: \n";
                 Eigen::Vector3d cPo =toEigen(aruco_frame_cf_.p);
                 double cPo_norm=cPo.norm();
                 Eigen::Vector3d s = cPo / cPo_norm;
@@ -391,7 +406,7 @@ class Iiwa_pub_sub : public rclcpp::Node
 
                 Eigen::Matrix3d L_lin = -(1.0/cPo_norm) * (I3 - s * s.transpose());
 
-                std::cout<<"L_lin: "<<L_lin<<"\n";
+                //std::cout<<"L_lin: "<<L_lin<<"\n";
 
                 Eigen::Matrix3d R_c = toEigen((robot_->getEEFrame()).M);
 
@@ -411,10 +426,9 @@ class Iiwa_pub_sub : public rclcpp::Node
 
                 LJ_c = L*J_c;
 
-                double k = 1;
+                double k = 10;
 
-                std::cout<<"sono_qui 2\n";
-
+                
                 Eigen::MatrixXd N(7,7);
                 N =  Eigen::MatrixXd::Identity(7, 7)-pseudoinverse(LJ_c)*LJ_c;
 
@@ -422,20 +436,61 @@ class Iiwa_pub_sub : public rclcpp::Node
 
                 q_dot_0 = init_jnt_pos_.data-joint_positions_.data; 
 
-                joint_velocities_.data=k*pseudoinverse(LJ_c)*sd+N*q_dot_0;
+               
 
-                joint_positions_.data = joint_positions_.data + joint_velocities_.data*dt;
+                if(cmd_interface_ == "effort")
+                {
+                    std::cout<<"effort computatuib: \n";
+                    KDL::JntArray ex_joint_velocities; 
+                    ex_joint_velocities.resize(nj);
+                    ex_joint_velocities.data=jnt_vel_.data;
+
+                    jnt_vel_.data = k*pseudoinverse(LJ_c)*sd+N*q_dot_0; //compute actual joint velocity
+                    
+                    jnt_pos_.data = jnt_pos_.data + jnt_vel_.data*dt; //compute the discrete integration to obtain position
+                    jnt_acc_.data = (jnt_vel_.data-ex_joint_velocities.data)/dt;//compute the discrete derivative to obtain acceleration
+
+                   
+                    
+                    if (camera_choice_=="mix") //to do pos and lap combined
+                    {
+                        robot_->update(toStdVector(jnt_pos_.data),toStdVector(jnt_vel_.data));
+
+                        lap_frame_=robot_->getEEFrame();
+
+                        robot_->update(toStdVector(joint_positions_.data),toStdVector(joint_velocities_.data));
+                    }
+                    else
+                    {
+                        //compute joint_torques
+                        if(control_technique_=="JS")
+                            joint_torques_=controller_.idCntr(jnt_pos_,jnt_vel_,jnt_acc_,kp_,kd_);
+                    }
+
+                }
+                else if (cmd_interface_ == "velocity")
+                {
+                    joint_velocities_.data=k*pseudoinverse(LJ_c)*sd+N*q_dot_0;
+
+                    joint_positions_.data = joint_positions_.data + joint_velocities_.data*dt;
+                    
+                }
+                else 
+                {
+                    while(1)
+                        std::cout<<"AAAAAAAAAAA MA SI PAZZ MA COME TI VIENE CRETINO CHE È STAROBA LEVA IL CONTROLLORE DI POSIZIONE";
+                }
+
 
 
 
             }
 
-//#######################################################################################
+            //#######################################################################################
 
 
 
-
-            else if(camera_choice_=="pos")
+            else if(camera_choice_=="pos" || camera_choice_=="mix")
             {
                 
                 // Retrieve the trajectory point
@@ -455,13 +510,19 @@ class Iiwa_pub_sub : public rclcpp::Node
 
                 // Compute EE frame
                 KDL::Frame cartpos = robot_->getEEFrame();
-
+/*
                 std::cout<<"\ncartpos.p: "<<cartpos.p<<'\n';
                 std::cout<<"cartpos.M: "<<cartpos.M<<'\n';
-
+*/
                 // compute errors //distances between end effector and target position
-                Eigen::Vector3d error = computeLinearError(p.pos, Eigen::Vector3d(cartpos.p.data)); 
-                Eigen::Vector3d o_error = computeOrientationError(toEigen(aruco_frame_bf_.M), toEigen(cartpos.M));
+                Eigen::Vector3d error = computeLinearError(p.pos, Eigen::Vector3d(cartpos.p.data));
+
+                Eigen::Vector3d o_error;
+
+                if(camera_choice_=="mix") 
+                    o_error = computeOrientationError(toEigen(lap_frame_.M), toEigen(cartpos.M));
+                else
+                    o_error = computeOrientationError(toEigen(aruco_frame_bf_.M), toEigen(cartpos.M));
                 //std::cout << "The target is : " << p.pos[0] << p.pos[1] << p.pos[2] << std::endl;
 
 
@@ -478,6 +539,7 @@ class Iiwa_pub_sub : public rclcpp::Node
 
                 if(cmd_interface_ == "position")
                 {
+                    std::cout<<"controllo posizione\n";
                     // Next Frame
                     KDL::Frame nextFrame; nextFrame.M = cartpos.M; nextFrame.p = cartpos.p + (toKDL(p.vel) + toKDL(1*error))*dt; 
 
@@ -486,10 +548,11 @@ class Iiwa_pub_sub : public rclcpp::Node
                 }
                 else if(cmd_interface_ == "effort")
                 {
+                    std::cout<<"controllo effort\n";
                     // Compute differential IK
                     //des_cartvel contains the desired cartesian velocties: << traslation, rotation
                     //includes also an error compensation (increase velocity if the cartesian error(angular or linear) is positive)
-                    Vector6d des_cartvel; des_cartvel << p.vel + 10*error, o_error;
+                    Vector6d des_cartvel; des_cartvel << p.vel + 10*error, 10*o_error;
 
                     //save in temporary variable ex_joint_velocities in order to compute discrete derivative
                     KDL::JntArray ex_joint_velocities; 
@@ -514,6 +577,7 @@ class Iiwa_pub_sub : public rclcpp::Node
                 }
                 else  //velocity control
                 {
+                    std::cout<<"controllo velocità\n";
 
 
                     // Compute differential IK
@@ -538,6 +602,7 @@ class Iiwa_pub_sub : public rclcpp::Node
                     {
                         desired_commands_[i] = joint_positions_(i);
                     }
+                    std::cout<<"position publicati\n";
                 }
                 else if(cmd_interface_ =="effort")
                 {
@@ -651,6 +716,9 @@ class Iiwa_pub_sub : public rclcpp::Node
         KDL::Frame aruco_frame_bf_;
         KDL::Frame aruco_frame_cf_;
         int aruco_pose_detected_;
+
+
+        KDL::Frame lap_frame_;
 };
 
  

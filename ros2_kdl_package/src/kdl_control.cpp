@@ -10,6 +10,8 @@ Eigen::VectorXd KDLController::idCntr(KDL::JntArray &_qd,
                                       KDL::JntArray &_ddqd,
                                       double _Kp, double _Kd)
 {
+    std::cout<<"idCntr:\n";
+
     // read current state
     Eigen::VectorXd q = robot_->getJntValues();
     Eigen::VectorXd dq = robot_->getJntVelocities();
@@ -20,7 +22,7 @@ Eigen::VectorXd KDLController::idCntr(KDL::JntArray &_qd,
 
     Eigen::VectorXd ddqd = _ddqd.data;
     return robot_->getJsim() * (ddqd + _Kd*de + _Kp*e)
-            + robot_->getCoriolis() + robot_->getGravity() /*friction compensation?*/;
+            + robot_->getCoriolis();// + robot_->getGravity() /*friction compensation?*/;
 }
 
 Eigen::VectorXd KDLController::idCntr2(KDL::Frame &_desPos,
@@ -90,7 +92,7 @@ Eigen::VectorXd KDLController::idCntr2(KDL::Frame &_desPos,
 
     y=pseudoinverse(Jacobian)*(desAcc_vec+KD_matrix*velocity_error+KP_matrix*position_error-JacDotqDot);
 
-    output_torques=robot_->getJsim()*y + robot_->getCoriolis() + robot_->getGravity();
+    output_torques=robot_->getJsim()*y + robot_->getCoriolis();// + robot_->getGravity();
     
     return output_torques;
 }
